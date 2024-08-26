@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {OwnerIsCreator} from "@chainlink/contracts-ccip/src/v0.8/shared/access/OwnerIsCreator.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
+import "forge-std/console.sol";
 
-/// @title - A simple sender contract for sending/receiving string data across chains.
+/**
+ * THIS IS AN EXAMPLE CONTRACT THAT USES HARDCODED VALUES FOR CLARITY.
+ * THIS IS AN EXAMPLE CONTRACT THAT USES UN-AUDITED CODE.
+ * DO NOT USE THIS CODE IN PRODUCTION.
+ */
+
+/// @title - A simple sender contract for sending/receving string data across chains.
 contract Sender is OwnerIsCreator {
     using SafeERC20 for IERC20;
 
@@ -24,6 +31,9 @@ contract Sender is OwnerIsCreator {
         address feeToken, // the token address used to pay CCIP fees.
         uint256 fees // The fees paid for sending the CCIP message.
     );
+
+    // New event for gas limit adjustment
+    event GasLimitAdjusted(uint256 original, uint256 adjusted);
 
     // Mapping to keep track of allowlisted destination chains.
     mapping(uint64 => bool) public allowlistedDestinationChains;
@@ -68,7 +78,7 @@ contract Sender is OwnerIsCreator {
     /// @param _destinationChainSelector The identifier (aka selector) for the destination blockchain.
     /// @param _receiver The address of the recipient on the destination blockchain.
     /// @param _iterations The number of iterations.
-    /// @param _gasLimit The gas limit provided by the user.
+    /// @param _gasLimit The gas limit provided for the CCIP message execution.
     /// @return messageId The ID of the CCIP message that was sent.
     function sendMessagePayLINK(
         uint64 _destinationChainSelector,
@@ -82,20 +92,24 @@ contract Sender is OwnerIsCreator {
         validateReceiver(_receiver)
         returns (bytes32 messageId)
     {
-        // Increase the gas limit by 10%
+        // Added by modification: Increase the gas limit by 10%
         uint256 adjustedGasLimit = _gasLimit + (_gasLimit / 10);
 
-        // Create an empty array of Client.EVMTokenAmount
-        Client.EVMTokenAmount;
+        // Debug logs
+        console.log("Original gas limit:", _gasLimit);
+        console.log("Adjusted gas limit:", adjustedGasLimit);
+
+        // Emit event for gas limit adjustment
+        emit GasLimitAdjusted(_gasLimit, adjustedGasLimit);
 
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
             receiver: abi.encode(_receiver), // ABI-encoded receiver address
             data: abi.encode(_iterations), // ABI-encoded iterations
-            tokenAmounts: emptyTokenAmounts, // Pass the empty array
+            tokenAmounts: new Client.EVMTokenAmount[](0), // Empty array as no tokens are transferred
             extraArgs: Client._argsToBytes(
                 // Additional arguments, setting gas limit
-                Client.EVMExtraArgsV1({gasLimit: adjustedGasLimit})
+                Client.EVMExtraArgsV1({gasLimit: adjustedGasLimit}) // Use adjusted gas limit
             ),
             // Set the feeToken to a feeTokenAddress, indicating specific asset will be used for fees
             feeToken: address(s_linkToken)
@@ -109,7 +123,7 @@ contract Sender is OwnerIsCreator {
 
         s_linkToken.safeTransferFrom(msg.sender, address(this), fees); // Transfer the fees to the contract
 
-        // Approve the Router to transfer LINK tokens on the contract's behalf. It will spend the fees in LINK.
+        // approve the Router to transfer LINK tokens on contract's behalf. It will spend the fees in LINK
         s_linkToken.approve(address(router), fees);
 
         // Send the CCIP message through the router and store the returned CCIP message ID
